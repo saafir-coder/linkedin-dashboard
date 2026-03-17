@@ -112,7 +112,7 @@
 <div class="section" id="tab-posts">
   <h2>Recent Posts</h2>
   <table>
-    <thead><tr><th>Preview</th><th>Image</th><th>Score</th><th>Status</th><th>Framework</th><th>Created</th></tr></thead>
+    <thead><tr><th>Preview</th><th>Image</th><th>Score</th><th>Status</th><th>Framework</th><th>Published</th></tr></thead>
     <tbody id="posts-table"><tr><td colspan="6" class="loader">Loading...</td></tr></tbody>
   </table>
 </div>
@@ -178,7 +178,7 @@ function timeAgo(dateStr) {
 async function loadDashboard() {
   try {
     // Posts
-    const posts = await query('posts', 'select=id,generated_text,status,self_check_score,framework,has_diagram,diagram_image_url,linkedin_post_urn,created_at,published_at&order=created_at.desc&limit=20');
+    const posts = await query('posts', 'select=id,generated_text,status,self_check_score,framework,has_diagram,diagram_image_url,linkedin_post_urn,created_at,published_at&order=published_at.desc.nullslast,created_at.desc&limit=20');
 
     const published = posts.filter(p => p.status === 'published');
     const withImages = posts.filter(p => p.has_diagram);
@@ -201,7 +201,7 @@ async function loadDashboard() {
         <td><div class="score-bar"><div class="score-fill" style="width:${scoreWidth}%;background:${scoreColor(p.self_check_score)}"></div></div> ${p.self_check_score || '?'}/10</td>
         <td><span class="status-badge status-${p.status}">${p.status}</span></td>
         <td>${p.framework || '-'}</td>
-        <td>${timeAgo(p.created_at)}</td>
+        <td>${p.status === 'published' && p.published_at ? timeAgo(p.published_at) : p.status === 'published' ? 'unknown' : 'not yet'}</td>
       </tr>`;
     });
     document.getElementById('posts-table').innerHTML = postsHtml || '<tr><td colspan="6">No posts yet</td></tr>';
