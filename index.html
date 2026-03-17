@@ -72,6 +72,21 @@
 
   .loader { color: #52525b; font-style: italic; padding: 40px; text-align: center; }
 
+  .pipeline-card {
+    background: #18181b; border-radius: 12px; padding: 20px; margin-bottom: 16px;
+    border: 1px solid #27272a; display: flex; gap: 20px;
+  }
+  .pipeline-card.ready { border-left: 4px solid #22c55e; }
+  .pipeline-card.waiting-image { border-left: 4px solid #f59e0b; }
+  .pipeline-card.pending { border-left: 4px solid #6366f1; }
+  .pipeline-image { width: 120px; min-height: 120px; border-radius: 8px; object-fit: cover; background: #27272a; flex-shrink: 0; }
+  .pipeline-image-placeholder { width: 120px; min-height: 120px; border-radius: 8px; background: #27272a; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: #52525b; font-size: 11px; text-align: center; }
+  .pipeline-content { flex: 1; }
+  .pipeline-status { font-size: 11px; font-weight: 600; text-transform: uppercase; margin-bottom: 8px; }
+  .pipeline-text { font-size: 13px; color: #d4d4d8; line-height: 1.6; white-space: pre-line; max-height: 200px; overflow: hidden; }
+  .pipeline-meta { font-size: 11px; color: #52525b; margin-top: 12px; display: flex; gap: 16px; }
+  .pipeline-expand { color: #6366f1; cursor: pointer; font-size: 12px; margin-top: 8px; }
+
   .tabs { display: flex; gap: 4px; margin-bottom: 24px; }
   .tab {
     padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600;
@@ -101,16 +116,24 @@
 
 <!-- Tabs -->
 <div class="tabs">
-  <div class="tab active" onclick="showTab('posts')">Posts</div>
+  <div class="tab active" onclick="showTab('pipeline')">Pipeline</div>
+  <div class="tab" onclick="showTab('posts')">Published</div>
   <div class="tab" onclick="showTab('experiments')">Experiments</div>
   <div class="tab" onclick="showTab('briefs')">Brief Pool</div>
   <div class="tab" onclick="showTab('metrics')">Metrics</div>
   <div class="tab" onclick="showTab('lessons')">Lessons Learned</div>
 </div>
 
+<!-- Pipeline Tab (NEW) -->
+<div class="section" id="tab-pipeline">
+  <h2>Publishing Pipeline</h2>
+  <p style="color:#71717a;font-size:13px;margin-bottom:16px;">Posts waiting to go live. Preview them here before they hit LinkedIn.</p>
+  <div id="pipeline-list"><div class="loader">Loading...</div></div>
+</div>
+
 <!-- Posts Tab -->
-<div class="section" id="tab-posts">
-  <h2>Recent Posts</h2>
+<div class="section hidden" id="tab-posts">
+  <h2>Published Posts</h2>
   <table>
     <thead><tr><th>Preview</th><th>Image</th><th>Score</th><th>Status</th><th>Framework</th><th>Published</th></tr></thead>
     <tbody id="posts-table"><tr><td colspan="6" class="loader">Loading...</td></tr></tbody>
@@ -177,8 +200,40 @@ function timeAgo(dateStr) {
 
 async function loadDashboard() {
   try {
-    // Posts
-    const posts = await query('posts', 'select=id,generated_text,status,self_check_score,framework,has_diagram,diagram_image_url,linkedin_post_urn,created_at,published_at&order=published_at.desc.nullslast,created_at.desc&limit=20');
+    // Pipeline — posts NOT yet published
+    const pipeline = await query('posts', 'select=id,generated_text,status,self_check_score,framework,has_diagram,diagram_image_url,created_at&status=in.(ready_to_publish,pending_review,publishing)&order=created_at.desc&limit=10');
+
+    let pipelineHtml = '';
+    if (pipeline.length === 0) {
+      pipelineHtml = '<div style="text-align:center;padding:40px;color:#52525b;">No posts in pipeline. Next WF1 run will generate one.</div>';
+    }
+    pipeline.forEach(p => {
+      const text = (p.generated_text || '').replace(/</g, '&lt;');
+      const hasImage = p.diagram_image_url;
+      const waitingForImage = p.has_diagram && !p.diagram_image_url;
+      const cardClass = hasImage ? 'ready' : waitingForImage ? 'waiting-image' : 'pending';
+      const statusLabel = p.status === 'ready_to_publish' ? (hasImage ? '🟢 Ready to publish (with image)' : waitingForImage ? '🟡 Waiting for image generation...' : '🟢 Ready to publish (text-only)') : p.status === 'pending_review' ? '🟠 Pending review (score 3-4)' : '🔵 Publishing now...';
+      const imgHtml = hasImage ? `<img class="pipeline-image" src="${p.diagram_image_url}" alt="diagram">` : `<div class="pipeline-image-placeholder">${waitingForImage ? 'Generating...' : 'Text only'}</div>`;
+
+      pipelineHtml += `<div class="pipeline-card ${cardClass}">
+        ${imgHtml}
+        <div class="pipeline-content">
+          <div class="pipeline-status" style="color:${hasImage ? '#22c55e' : waitingForImage ? '#f59e0b' : '#6366f1'}">${statusLabel}</div>
+          <div class="pipeline-text">${text.substring(0, 500)}${text.length > 500 ? '...' : ''}</div>
+          <div class="pipeline-meta">
+            <span>Score: ${p.self_check_score || '?'}/10</span>
+            <span>Framework: ${p.framework || '-'}</span>
+            <span>Created: ${timeAgo(p.created_at)}</span>
+            <span>ID: ${p.id.substring(0,8)}</span>
+          </div>
+          ${text.length > 500 ? '<div class="pipeline-expand" onclick="this.previousElementSibling.previousElementSibling.style.maxHeight=\'none\';this.remove();">Show full text ↓</div>' : ''}
+        </div>
+      </div>`;
+    });
+    document.getElementById('pipeline-list').innerHTML = pipelineHtml;
+
+    // Posts (published only)
+    const posts = await query('posts', 'select=id,generated_text,status,self_check_score,framework,has_diagram,diagram_image_url,linkedin_post_urn,created_at,published_at&status=eq.published&order=published_at.desc.nullslast,created_at.desc&limit=20');
 
     const published = posts.filter(p => p.status === 'published');
     const withImages = posts.filter(p => p.has_diagram);
